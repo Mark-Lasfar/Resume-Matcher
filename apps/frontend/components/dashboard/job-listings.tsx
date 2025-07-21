@@ -25,7 +25,7 @@ type AnalyzedJobData = Pick<Job, 'title' | 'company' | 'location'>;
 /**
  * Props for the JobListings component
  * @interface JobListingsProps
- * @property {(text: string) => Promise<AnalyzedJobData | null>} onUploadJob - Function to analyze job description
+ * @property {(text: string) => Promise<AnalyzedJobData | null>} onUploadJob - Async function to analyze job description
  */
 interface JobListingsProps {
   onUploadJob: (text: string) => Promise<AnalyzedJobData | null>;
@@ -34,7 +34,7 @@ interface JobListingsProps {
 /**
  * JobListings Component
  * Displays a job analyzer interface, allowing users to upload and view analyzed job descriptions.
- * Handles race conditions for concurrent analyses and provides error feedback.
+ * Prevents stale analysis results and provides error feedback to the user.
  * @param {JobListingsProps} props - Component props
  * @returns {JSX.Element} The rendered job analyzer component
  */
@@ -45,36 +45,44 @@ const JobListings: React.FC<JobListingsProps> = ({ onUploadJob }) => {
   const [error, setError] = useState<string | null>(null);
   const latestAnalysis = useRef<symbol | null>(null);
 
+  /**
+   * Opens the modal for pasting job descriptions
+   */
   const handleOpenModal = () => {
     setError(null); // Clear previous errors
     setIsModalOpen(true);
   };
 
+  /**
+   * Closes the modal
+   */
   const handleCloseModal = () => setIsModalOpen(false);
 
+  /**
+   * Handles pasting and analyzing job description text
+   * Prevents stale results by tracking the latest analysis with a unique token
+   * @param {string} text - The job description text to analyze
+   */
   const handlePasteAndAnalyzeJob = async (text: string) => {
     setIsAnalyzing(true);
     setAnalyzedJob(null);
     setError(null);
-
     const token = Symbol('analysis');
     latestAnalysis.current = token;
 
     try {
       const jobData = await onUploadJob(text);
-      // Ignore stale results
       if (latestAnalysis.current === token) {
         setAnalyzedJob(jobData);
         if (!jobData) {
-          setError('Failed to analyze job description.');
+          setError('Analysis returned no data.');
         }
       }
     } catch (err) {
       console.error('Error analyzing job description:', err);
       if (latestAnalysis.current === token) {
         setAnalyzedJob(null);
-        setError('An error occurred while analyzing the job description.');
-        // TODO: Add toast notification or inline error display here
+        setError(err instanceof Error ? err.message : 'An unknown error occurred during analysis.');
       }
     } finally {
       if (latestAnalysis.current === token) {
@@ -92,11 +100,6 @@ const JobListings: React.FC<JobListingsProps> = ({ onUploadJob }) => {
           ? 'Analyzed job details below.'
           : 'Upload a job description to analyze its key details.'}
       </p>
-      {error && (
-        <p className="text-destructive mb-4 text-sm" role="alert">
-          {error}
-        </p>
-      )}
       {isAnalyzing ? (
         <div className="text-center text-gray-400 py-8">
           <p>Analyzing job description...</p>
@@ -105,9 +108,14 @@ const JobListings: React.FC<JobListingsProps> = ({ onUploadJob }) => {
         <div className="space-y-4">
           <div className="p-4 bg-gray-700 rounded-md shadow-md">
             <h3 className="text-lg font-semibold text-gray-100">{analyzedJob.title}</h3>
-            <p className="text-sm text-gray-300">{analyzedJob.company}</p>
+            <p className="text-sm fresco text-gray-300">{analyzedJob.company}</p>
             <p className="text-xs text-gray-400 mt-1">{analyzedJob.location}</p>
           </div>
+          {error && (
+            <p className="text-destructive mt-2 text-xs" role="alert">
+              {error}
+            </p>
+          )}
           <button
             onClick={handleOpenModal}
             className="w-full text-center block bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors duration-200 text-sm mt-4"
@@ -117,6 +125,11 @@ const JobListings: React.FC<JobListingsProps> = ({ onUploadJob }) => {
         </div>
       ) : (
         <div className="text-center text-gray-400 py-8 flex flex-col justify-center items-center">
+          {error && (
+            <p className="text-destructive mt-2 text-xs mb-3" role="alert">
+              {error}
+            </p>
+          )}
           <p className="mb-3">No job description analyzed yet.</p>
           <button
             onClick={handleOpenModal}
